@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Analyse Statistique - Diaporama</title>
+    <style>
+        body { margin: 0; background: #f0f0f0; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; align-items: center; }
+        canvas { background: #fff; border: 2px solid #333; box-shadow: 0 0 20px rgba(0,0,0,0.2); margin-top: 20px; }
+        .info { padding: 10px; color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="info">Support de présentation - ZQSD / Flèches - ESPACE pour tirer</div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const socket = io();
+
+        let players = {};
+        let bullets = [];
+        let currentAngle = 0;
+        let targetAngle = 0;
+
+        socket.on('state', (serverPlayers) => { players = serverPlayers; });
+        socket.on('bullet', (b) => { bullets.push(b); });
+
+        const keys = {};
+        window.onkeydown = (e) => { 
+            keys[e.key.toLowerCase()] = true; 
+            if(e.key === ' ') socket.emit('shoot', { angle: currentAngle }); 
+        };
+        window.onkeyup = (e) => { keys[e.key.toLowerCase()] = false; };
+
+        function update() {
+            let dx = 0, dy = 0;
+            if (keys['z'] || keys['arrowup']) dy -= 4;
+            if (keys['s'] || keys['arrowdown']) dy += 4;
+            if (keys['q'] || keys['arrowleft']) dx -= 4;
+            if (keys['d'] || keys['arrowright']) dx += 4;
+
+            // Calcul de l'angle cible basé sur le mouvement
+            if (dx !== 0 || dy !== 0) {
+                targetAngle = Math.atan2(dy, dx);
+                
+                // Rotation "Smooth" (interpolation)
+                let diff = targetAngle - currentAngle;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                currentAngle += diff * 0.2;
+
+                socket.emit('move', { x: dx, y: dy, angle: currentAngle });
+            }
+
+            // Update des balles (mouvement sur X et Y selon l'angle)
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                bullets[i].x += Math.cos(bullets[i].angle) * 8;
+                bullets[i].y += Math.sin(bullets[i].angle) * 8;
+
+                for (let id in players) {
+                    if (id !== bullets[i].owner) {
+                        let p = players[id];
+                        // Collision simple cercle/carré
+                        if (bullets[i].x > p.x && bullets[i].x < p.x + 20 && bullets[i].y > p.y && bullets[i].y < p.y + 20) {
+                            if (id === socket.id) socket.emit('hit', socket.id);
+                            bullets.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
+
+                if (bullets[i] && (bullets[i].x < 0 || bullets[i].x > 800 || bullets[i].y < 0 || bullets[i].y > 600)) {
+                    bullets.splice(i, 1);
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (let id in players) {
+                let p = players[id];
+                ctx.save();
+                ctx.translate(p.x + 10, p.y + 10);
+                ctx.rotate(p.angle);
+                
+                // Corps du joueur
+                ctx.fillStyle = p.color;
+                ctx.fillRect(-10, -10, 20, 20);
+                
+                // Canon ou "yeux" pour montrer la direction
+                ctx.fillStyle = "black";
+                ctx.fillRect(5, -2, 8, 4); 
+                ctx.restore();
+            }
+
+            // Balles
+            ctx.fillStyle = "orange";
+            bullets.forEach(b => {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            update();
+            requestAnimationFrame(draw);
+        }
+        draw();
+    </script>
+</body>
+</html>
