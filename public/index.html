@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aav Messenger</title>
+    <style>
+        body { font-family: sans-serif; background: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        #login-screen, #chat-screen { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 350px; }
+        #chat-screen { display: none; height: 500px; flex-direction: column; }
+        #messages { flex-grow: 1; overflow-y: auto; border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; list-style: none; }
+        input { width: 80%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+        button { padding: 10px; background: #0084ff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen">
+        <h2>Connexion</h2>
+        <input type="text" id="username" placeholder="Ton pseudo...">
+        <button onclick="login()">Entrer</button>
+    </div>
+
+    <div id="chat-screen">
+        <ul id="messages"></ul>
+        <div style="display:flex;">
+            <input type="text" id="m" placeholder="Message...">
+            <button onclick="sendMessage()">Envoyer</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let user = "";
+
+        function login() {
+            user = document.getElementById('username').value;
+            if(user) {
+                socket.emit('login', user);
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('chat-screen').style.display = 'flex';
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('m');
+            socket.emit('chat message', input.value);
+            input.value = '';
+        }
+
+        socket.on('chat message', (data) => {
+            const li = document.createElement('li');
+            li.innerHTML = `<b>${data.user}:</b> ${data.text}`;
+            document.getElementById('messages').appendChild(li);
+        });
+    </script>
+</body>
+</html>
