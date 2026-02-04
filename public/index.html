@@ -2,88 +2,118 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Espace de travail</title>
+    <title>Sélecteur de Session</title>
     <style>
-        body { font-family: sans-serif; background: #1a1a1a; color: white; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        #login-screen, #chat-screen { background: #2a2a2a; padding: 25px; border-radius: 15px; width: 450px; }
-        #chat-screen { display: none; height: 600px; flex-direction: column; }
-        #messages { flex-grow: 1; overflow-y: auto; border: 1px solid #444; padding: 15px; margin-bottom: 15px; list-style: none; border-radius: 8px; background: #111; }
-        .msg-img { max-width: 100%; display: block; margin-top: 8px; border-radius: 4px; image-rendering: pixelated; }
-        .controls { display: flex; gap: 8px; }
-        input { flex-grow: 1; padding: 12px; border: 1px solid #444; border-radius: 8px; background: #333; color: white; outline: none; }
-        button { padding: 10px 15px; background: #444; color: white; border: none; border-radius: 8px; cursor: pointer; }
-        #file-input { display: none; }
+        body { font-family: sans-serif; background: #1a1a1a; color: white; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; position: relative; }
+        .admin-link { position: absolute; top: 20px; right: 20px; text-decoration: none; color: #555; font-size: 12px; padding: 8px 12px; border: 1px solid #333; border-radius: 5px; }
+        .container { width: 90%; max-width: 500px; text-align: center; }
+        .room-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-top: 20px; }
+        .room-card { background: #2a2a2a; border: 2px solid #444; border-radius: 12px; padding: 20px; cursor: pointer; transition: 0.2s; }
+        .room-card:hover { border-color: #3498db; }
+        .global-card { grid-column: span 2; background: #34495e; }
+        .add-btn { font-size: 30px; color: #3498db; background: none; border: 2px dashed #3498db; cursor: pointer; border-radius: 12px; }
+        #login-overlay, #chat-page { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
+        #messages { width: 95%; max-width: 600px; height: 70%; background: #111; overflow-y: auto; padding: 15px; border-radius: 8px; list-style: none; margin: 0; }
+        .controls { display: flex; width: 95%; max-width: 600px; gap: 10px; margin-top: 10px; }
+        input { padding: 12px; border-radius: 8px; border: 1px solid #444; background: #333; color: white; outline: none; }
+        
+        /* PIXELISATION AFFICHAGE */
+        .msg-img { 
+            width: 200px; height: auto; border-radius: 4px; display: block; margin-top: 5px; border: 1px solid #444;
+            image-rendering: pixelated; image-rendering: crisp-edges;
+        }
+        .file-btn { background: #444; border: none; color: white; padding: 0 15px; border-radius: 8px; cursor: pointer; font-size: 20px; }
     </style>
 </head>
 <body>
-    <div id="login-screen">
-        <h2>Connexion Session</h2>
-        <input type="text" id="username" placeholder="Identifiant..." onkeypress="if(event.keyCode===13) login()">
-        <button onclick="login()" style="width:100%; margin-top:10px;">Accéder</button>
+    <a href="/list" class="admin-link">Archives Documentaires</a>
+    <div id="selection-page" class="container">
+        <h1>Choisis ton Salon</h1>
+        <div class="room-grid" id="room-list"></div>
     </div>
-    <div id="chat-screen">
+    <div id="login-overlay">
+        <h2>Salon</h2>
+        <input type="text" id="username-input" placeholder="Ton pseudo...">
+        <p id="error-text" style="color:red;"></p>
+        <button onclick="attemptLogin()" style="width:200px; padding:12px; background:#3498db; color:white; border:none; border-radius:8px; cursor:pointer;">Entrer</button>
+    </div>
+    <div id="chat-page">
+        <div style="width: 95%; max-width: 600px; display:flex; justify-content:space-between; margin-bottom:10px;">
+            <h3 id="current-room-header">#...</h3>
+            <button onclick="location.reload()">Quitter</button>
+        </div>
         <ul id="messages"></ul>
         <div class="controls">
-            <button onclick="document.getElementById('file-input').click()">📁</button>
-            <input type="text" id="m" placeholder="Message..." autocomplete="off" onkeypress="handleKeyPress(event)">
-            <button onclick="sendMessage()">Envoyer</button>
+            <button class="file-btn" onclick="document.getElementById('file-input').click()">📎</button>
+            <input type="text" id="m" style="flex-grow:1;" placeholder="Message..." onkeypress="if(event.keyCode===13) sendMessage()">
+            <button onclick="sendMessage()" style="background:#3498db; border:none; color:white; padding:0 20px; border-radius:8px; cursor:pointer;">Envoyer</button>
         </div>
-        <input type="file" id="file-input" accept="image/*" onchange="handleImage(this)">
+        <input type="file" id="file-input" style="display:none;" accept="image/*" onchange="handleImage(this)">
     </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        let user = "";
+        let currentRoom = "";
         let currentImageData = null;
-        function login() {
-            const input = document.getElementById('username');
-            user = input.value.trim();
-            if(user) {
-                socket.emit('login', user);
-                document.getElementById('login-screen').style.display = 'none';
-                document.getElementById('chat-screen').style.display = 'flex';
-                document.getElementById('m').focus();
-            }
+
+        socket.on('room list', (rooms) => {
+            const grid = document.getElementById('room-list'); grid.innerHTML = '';
+            rooms.forEach(r => {
+                grid.innerHTML += `<div class="room-card ${r.isGlobal?'global-card':''}" onclick="openLogin('${r.name}')">
+                    <strong>${r.name.toUpperCase()}</strong><br><small>${r.userCount} connectés</small>
+                </div>`;
+            });
+            grid.innerHTML += `<button class="room-card add-btn" onclick="createNewRoom()">+</button>`;
+        });
+
+        function openLogin(name) { currentRoom = name; document.getElementById('login-overlay').style.display = 'flex'; }
+        function createNewRoom() { const n = prompt("Nom ?"); if(n) openLogin(n.toLowerCase()); }
+        function attemptLogin() {
+            const user = document.getElementById('username-input').value.trim();
+            if(user) socket.emit('check login', { username: user, room: currentRoom });
         }
-        function handleKeyPress(event) { if (event.keyCode === 13) { event.preventDefault(); sendMessage(); } }
+        socket.on('login success', (data) => {
+            document.getElementById('login-overlay').style.display = 'none';
+            document.getElementById('selection-page').style.display = 'none';
+            document.getElementById('chat-page').style.display = 'flex';
+            document.getElementById('current-room-header').innerText = "# " + data.room;
+        });
+
+        // PIXELISATION PHYSIQUE (80px)
         function handleImage(input) {
-            const file = input.files[0];
-            if (!file) return;
+            const file = input.files[0]; if (!file) return;
             const reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = (e) => {
                 const img = new Image();
-                img.onload = function() {
+                img.onload = () => {
                     const canvas = document.createElement('canvas');
+                    const targetWidth = 80; const scale = targetWidth / img.width;
+                    canvas.width = targetWidth; canvas.height = img.height * scale;
                     const ctx = canvas.getContext('2d');
-                    const scale = 100 / img.width; // Encore plus petit pour être sûr
-                    canvas.width = 100;
-                    canvas.height = img.height * scale;
-                    ctx.imageSmoothingEnabled = false;
+                    ctx.imageSmoothingEnabled = false; // Désactive lissage
                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    currentImageData = canvas.toDataURL('image/jpeg', 0.2);
+                    currentImageData = canvas.toDataURL('image/png'); // Ultra léger
+                    alert("Image pixelisée chargée !");
                 };
                 img.src = e.target.result;
             };
             reader.readAsDataURL(file);
         }
+
         function sendMessage() {
-            const input = document.getElementById('m');
-            const text = input.value.trim();
-            if (!text && !currentImageData) return;
-            socket.emit('chat message', { text: text, image: currentImageData });
-            input.value = '';
-            currentImageData = null;
-            document.getElementById('file-input').value = '';
-            input.focus();
+            const i = document.getElementById('m');
+            if(i.value || currentImageData) {
+                socket.emit('chat message', { text: i.value, image: currentImageData });
+                i.value = ''; currentImageData = null;
+            }
         }
-        socket.on('chat message', (data) => {
+        socket.on('chat message', d => {
             const li = document.createElement('li');
-            let content = `<b>${data.user}:</b> ${data.text}`;
-            if(data.image) content += `<img src="${data.image}" class="msg-img">`;
-            li.innerHTML = content;
-            const msgList = document.getElementById('messages');
-            msgList.appendChild(li);
-            msgList.scrollTop = msgList.scrollHeight;
+            li.innerHTML = `<b>${d.user}:</b> ${d.text}`;
+            if(d.image) li.innerHTML += `<img src="${d.image}" class="msg-img">`;
+            document.getElementById('messages').appendChild(li);
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
         });
     </script>
 </body>

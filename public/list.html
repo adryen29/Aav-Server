@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>Archives</title></head>
+<body style="font-family:sans-serif; background:#f4f7f6; padding:20px;">
+    <h1>Modules disponibles</h1>
+    <div id="list">Chargement...</div>
+    <script>
+        fetch('/api/games').then(r => r.json()).then(games => {
+            const l = document.getElementById('list');
+            l.innerHTML = games.length ? '' : 'Aucun module.';
+            games.forEach(g => {
+                l.innerHTML += `<a href="/${g.url}" style="display:block; background:white; padding:15px; margin-bottom:10px; border-radius:8px; border:1px solid #ddd; text-decoration:none; color:#333;"><b>Module ${g.id}</b></a>`;
+            });
+        });
+    </script>
+</body></html>
