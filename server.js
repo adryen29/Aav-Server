@@ -76,22 +76,30 @@ io.on('connection', (socket) => {
         io.emit('highscores', highScores);
     });
 
-    // --- LOGIQUE DIAPO 2 (NOUVEAU) ---
+    // --- LOGIQUE DIAPO 2 ---
     socket.on('join d2', (name) => {
-        d2Players[socket.id] = { id: socket.id, name: name, hits: 0, diffuseSuccess: 0, diffuseFail: 0, attacking: false };
+        d2Players[socket.id] = { id: socket.id, name: name, hits: 0, diffuseSuccess: 0, diffuseFail: 0, attacking: false, isUnderAttack: false };
         io.emit('update d2', d2Players);
     });
 
     socket.on('d2 attack', (targetId) => {
         if(d2Players[socket.id] && d2Players[targetId] && socket.id !== targetId) {
-            io.to(targetId).emit('under attack', socket.id);
+            if(!d2Players[targetId].isUnderAttack) {
+                d2Players[targetId].isUnderAttack = true;
+                const endTime = Date.now() + 10000; // Fin dans 10 secondes
+                io.to(targetId).emit('under attack', { attackerId: socket.id, endTime: endTime });
+                io.emit('update d2', d2Players);
+            }
         }
     });
 
     socket.on('d2 attack success', (attackerId) => {
         if(d2Players[attackerId]) d2Players[attackerId].hits++;
-        if(d2Players[socket.id]) d2Players[socket.id].diffuseFail++;
-        // Choix d'un son aléatoire dans public/Sounds
+        if(d2Players[socket.id]) {
+            d2Players[socket.id].diffuseFail++;
+            d2Players[socket.id].isUnderAttack = false;
+        }
+        
         try {
             const soundDir = path.join(__dirname, 'public', 'Sounds');
             if(fs.existsSync(soundDir)) {
@@ -106,7 +114,10 @@ io.on('connection', (socket) => {
     });
 
     socket.on('d2 diffuse success', () => {
-        if(d2Players[socket.id]) d2Players[socket.id].diffuseSuccess++;
+        if(d2Players[socket.id]) {
+            d2Players[socket.id].diffuseSuccess++;
+            d2Players[socket.id].isUnderAttack = false;
+        }
         io.emit('update d2', d2Players);
     });
 

@@ -76,8 +76,21 @@
         const socket = io();
         let myPseudo = "";
         let attackerId = null;
-        let attackTimeout = null;
+        let globalEndTime = null;
+        let updateInterval = null;
         let attackCooldown = false;
+
+        // --- ANTI-AUTOCLICK ---
+        let clickTimestamps = [];
+        function checkClickSpeed() {
+            const now = Date.now();
+            clickTimestamps.push(now);
+            clickTimestamps = clickTimestamps.filter(t => now - t < 1000);
+            if (clickTimestamps.length > 30) {
+                alert("Auto-click détecté (> 30 CPS). Kick imminent.");
+                location.reload();
+            }
+        }
 
         function startD2() {
             const val = document.getElementById('p-input').value.trim();
@@ -104,45 +117,50 @@
                 }
                 const div = document.createElement('div');
                 div.className = "player-item";
-                div.innerHTML = `<span>${players[id].name}</span> 
-                                 <button onclick="attack('${id}')" ${attackCooldown ? 'disabled' : ''}>Attaquer</button>`;
+                const isTargetBusy = players[id].isUnderAttack;
+                div.innerHTML = `<span>${players[id].name} ${isTargetBusy ? '(Verrouillée)' : ''}</span> 
+                                 <button onclick="attack('${id}')" ${ (attackCooldown || isTargetBusy) ? 'disabled' : ''}>Attaquer</button>`;
                 list.appendChild(div);
             }
         });
 
         function attack(id) {
             if(attackCooldown) return;
+            checkClickSpeed();
             socket.emit('d2 attack', id);
             attackCooldown = true;
             setTimeout(() => { attackCooldown = false; socket.emit('join d2', myPseudo); }, 40000);
             socket.emit('join d2', myPseudo);
         }
 
-        socket.on('under attack', (id) => {
-            attackerId = id;
+        socket.on('under attack', (data) => {
+            attackerId = data.attackerId;
+            globalEndTime = data.endTime;
+            
             document.getElementById('main-circle').classList.add('attacked');
             document.getElementById('alert-box').style.display = 'block';
             document.getElementById('diffuse-btn').classList.add('active');
             
-            let timeLeft = 10;
-            const timerEl = document.getElementById('timer-display');
-            timerEl.innerText = `${timeLeft}s`;
+            if(updateInterval) clearInterval(updateInterval);
             
-            const interval = setInterval(() => {
-                timeLeft--;
-                timerEl.innerText = `${timeLeft}s`;
-                if(timeLeft <= 0) clearInterval(interval);
-            }, 1000);
-
-            attackTimeout = setTimeout(() => {
-                clearInterval(interval);
-                failDiffuse();
-            }, 10000);
+            updateInterval = setInterval(() => {
+                const now = Date.now();
+                const remaining = Math.ceil((globalEndTime - now) / 1000);
+                
+                if(remaining <= 0) {
+                    clearInterval(updateInterval);
+                    document.getElementById('timer-display').innerText = "0s";
+                    failDiffuse();
+                } else {
+                    document.getElementById('timer-display').innerText = `${remaining}s`;
+                }
+            }, 200);
         });
 
         function tryDiffuse() {
             if(attackerId) {
-                clearTimeout(attackTimeout);
+                checkClickSpeed();
+                if(updateInterval) clearInterval(updateInterval);
                 socket.emit('d2 diffuse success');
                 resetState();
             }
@@ -155,6 +173,7 @@
 
         function resetState() {
             attackerId = null;
+            globalEndTime = null;
             document.getElementById('main-circle').classList.remove('attacked');
             document.getElementById('alert-box').style.display = 'none';
             document.getElementById('diffuse-btn').classList.remove('active');
@@ -163,7 +182,7 @@
 
         socket.on('play sound', (url) => {
             const audio = new Audio(url);
-            audio.play().catch(e => console.log("Audio bloqué par le navigateur"));
+            audio.play().catch(e => console.log("Audio bloqué"));
         });
     </script>
 </body>
