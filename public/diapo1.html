@@ -5,38 +5,66 @@
     <title>Module de Jeu - Combat</title>
     <style>
         body { margin: 0; background: #1a1a1a; overflow: hidden; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: sans-serif; }
-        #game-wrapper { position: relative; width: 800px; height: 600px; border: 4px solid #444; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-        canvas { background: #333; display: block; }
+        #game-wrapper { position: relative; width: 800px; height: 600px; border: 4px solid #444; box-shadow: 0 0 20px rgba(0,0,0,0.5); display: none; }
+        canvas { background: #333; display: block; cursor: crosshair; }
         
-        /* Scores superposés pour gagner de la place */
         .score-panel { 
             position: absolute; top: 10px; width: 160px; 
             background: rgba(42, 42, 42, 0.8); border-radius: 6px; 
             padding: 10px; color: white; border: 1px solid rgba(255,255,255,0.1); 
-            pointer-events: none; /* Ne gêne pas les clics sur le jeu */
+            pointer-events: none;
         }
         #panel-left { left: 10px; }
         #panel-right { right: 10px; }
         
+        #control-toggle {
+            position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+            padding: 8px 15px; background: #3498db; color: white; border: none;
+            border-radius: 20px; cursor: pointer; font-weight: bold; font-size: 10px;
+            z-index: 30; box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+
         h4 { margin: 0 0 5px 0; color: #3498db; text-transform: uppercase; font-size: 12px; border-bottom: 1px solid #444; }
         .score-item { display: flex; justify-content: space-between; margin-bottom: 2px; font-size: 12px; }
         
         #respawn-msg { 
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
             color: #e74c3c; font-size: 24px; font-weight: bold; display: none; 
-            text-shadow: 2px 2px #000; text-align: center;
+            text-shadow: 2px 2px #000; text-align: center; pointer-events: none;
+        }
+
+        #game-login {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(26, 26, 26, 1);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 20; color: white;
+        }
+        #game-login input { 
+            padding: 12px; border-radius: 8px; border: 1px solid #444; 
+            background: #333; color: white; margin-bottom: 10px; width: 200px; text-align: center;
+        }
+        #game-login button {
+            padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 8px; cursor: pointer;
         }
     </style>
 </head>
 <body>
+    <div id="game-login">
+        <h2>Prêt au combat ?</h2>
+        <input type="text" id="game-username" placeholder="Ton pseudo..." maxlength="10">
+        <button onclick="joinGame()">ENTRER DANS L'ARÈNE</button>
+    </div>
+
     <div id="game-wrapper">
+        <button id="control-toggle" onclick="toggleControls()">MODE: CLAVIER</button>
+        
         <div id="panel-left" class="score-panel">
             <h4>Top Records</h4>
             <div id="highscores-list"></div>
         </div>
 
         <canvas id="gameCanvas" width="800" height="600"></canvas>
-        <div id="respawn-msg">DESTRUCTION...<br>RECONNEXION (3s)</div>
+        <div id="respawn-msg">DESTRUCTION...<br>RECONNEXION DANS <span id="timer">3</span>s</div>
 
         <div id="panel-right" class="score-panel">
             <h4>Joueurs Actifs</h4>
@@ -49,19 +77,78 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const socket = io();
-        const myName = localStorage.getItem('user') || "Anonyme";
-        socket.emit('start game', myName);
+        
+        const savedUser = localStorage.getItem('user');
+        if(savedUser) document.getElementById('game-username').value = savedUser;
 
         let players = {}; let bullets = []; let currentAngle = 0;
+        let isPlaying = false; let respawnInterval = null;
+        let useMouseAim = false;
+        let mousePos = { x: 0, y: 0 };
         const keys = {};
+
+        // --- ANTI-AUTOCLICK ---
+        let clickTimestamps = [];
+        function checkClickSpeed() {
+            const now = Date.now();
+            clickTimestamps.push(now);
+            clickTimestamps = clickTimestamps.filter(t => now - t < 1000);
+            if (clickTimestamps.length > 30) {
+                alert("Auto-click détecté (> 30 CPS). Kick imminent.");
+                location.reload();
+            }
+        }
+
+        function joinGame() {
+            const user = document.getElementById('game-username').value.trim();
+            if(user) {
+                localStorage.setItem('user', user);
+                socket.emit('start game', user);
+                document.getElementById('game-login').style.display = 'none';
+                document.getElementById('game-wrapper').style.display = 'block';
+                isPlaying = true;
+            }
+        }
+
+        function toggleControls() {
+            useMouseAim = !useMouseAim;
+            document.getElementById('control-toggle').innerText = useMouseAim ? "MODE: SOURIS" : "MODE: CLAVIER";
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mousePos.x = e.clientX - rect.left;
+            mousePos.y = e.clientY - rect.top;
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            checkClickSpeed();
+            if(isPlaying && players[socket.id]?.alive && !players[socket.id]?.protected) {
+                const p = players[socket.id];
+                socket.emit('shoot', { x: p.x+10, y: p.y+10, angle: currentAngle });
+            }
+        });
 
         socket.on('state', (s) => { 
             players = s; 
             updateScores();
-            if(players[socket.id] && !players[socket.id].alive) {
-                document.getElementById('respawn-msg').style.display = 'block';
+            
+            const msg = document.getElementById('respawn-msg');
+            if(isPlaying && players[socket.id] && !players[socket.id].alive) {
+                if(msg.style.display !== 'block') {
+                    msg.style.display = 'block';
+                    let timeLeft = 3;
+                    document.getElementById('timer').innerText = timeLeft;
+                    if(respawnInterval) clearInterval(respawnInterval);
+                    respawnInterval = setInterval(() => {
+                        timeLeft--;
+                        document.getElementById('timer').innerText = Math.max(0, timeLeft);
+                        if(timeLeft <= 0) clearInterval(respawnInterval);
+                    }, 1000);
+                }
             } else {
-                document.getElementById('respawn-msg').style.display = 'none';
+                msg.style.display = 'none';
+                if(respawnInterval) clearInterval(respawnInterval);
             }
         });
 
@@ -80,8 +167,9 @@
 
         window.onkeydown = (e) => { 
             keys[e.key.toLowerCase()] = true;
-            if(e.key === ' ' && players[socket.id]?.alive) { 
+            if(e.key === ' ' && isPlaying && players[socket.id]?.alive && !players[socket.id]?.protected) { 
                 e.preventDefault(); 
+                checkClickSpeed(); 
                 const p = players[socket.id];
                 socket.emit('shoot', { x: p.x+10, y: p.y+10, angle: currentAngle }); 
             }
@@ -89,23 +177,33 @@
         window.onkeyup = (e) => { keys[e.key.toLowerCase()] = false; };
 
         function update() {
-            if(!players[socket.id] || !players[socket.id].alive) return;
-            let dx = 0, dy = 0;
-            if (keys['z'] || keys['w']) dy -= 4;
-            if (keys['s']) dy += 4;
-            if (keys['q'] || keys['a']) dx -= 4;
-            if (keys['d']) dx += 4;
-            if (dx !== 0 || dy !== 0) {
-                currentAngle = Math.atan2(dy, dx);
-                socket.emit('move', { x: dx, y: dy, angle: currentAngle });
+            if(isPlaying && players[socket.id] && players[socket.id].alive) {
+                const p = players[socket.id];
+                let dx = 0, dy = 0;
+                if (keys['z'] || keys['w']) dy -= 4;
+                if (keys['s']) dy += 4;
+                if (keys['q'] || keys['a']) dx -= 4;
+                if (keys['d']) dx += 4;
+                
+                if (useMouseAim) {
+                    currentAngle = Math.atan2(mousePos.y - (p.y + 10), mousePos.x - (p.x + 10));
+                } else if (dx !== 0 || dy !== 0) {
+                    currentAngle = Math.atan2(dy, dx);
+                }
+
+                if (dx !== 0 || dy !== 0 || useMouseAim) {
+                    socket.emit('move', { x: dx, y: dy, angle: currentAngle });
+                }
             }
+
             for (let i = bullets.length - 1; i >= 0; i--) {
                 const b = bullets[i];
                 b.x += Math.cos(b.angle) * 8;
                 b.y += Math.sin(b.angle) * 8;
+                
                 for(let id in players) {
                     const p = players[id];
-                    if(p.alive && b.owner !== id) {
+                    if(p.alive && !p.protected && b.owner !== id) {
                         const dist = Math.hypot(b.x - (p.x+10), b.y - (p.y+10));
                         if(dist < 15) {
                             if(b.owner === socket.id) socket.emit('hit', { victimId: id, shooterId: socket.id });
@@ -127,8 +225,19 @@
             for (let id in players) {
                 let p = players[id];
                 if(!p.alive) continue;
+                
                 ctx.save();
                 ctx.translate(p.x + 10, p.y + 10); ctx.rotate(p.angle);
+                
+                if(p.protected) {
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 20, 0, Math.PI*2);
+                    ctx.strokeStyle = "white";
+                    ctx.setLineDash([5, 5]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
                 ctx.fillStyle = p.color; ctx.fillRect(-10, -10, 20, 20);
                 ctx.fillStyle = "black"; ctx.fillRect(5, -2, 8, 4); 
                 ctx.restore();
@@ -143,6 +252,7 @@
             
             ctx.fillStyle = "#ff0";
             bullets.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, Math.PI*2); ctx.fill(); });
+            
             update();
             requestAnimationFrame(draw);
         }

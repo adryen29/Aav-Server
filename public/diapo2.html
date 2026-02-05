@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Cercle Tactique</title>
+    <style>
+        body { margin: 0; background: #0f0f0f; color: white; font-family: sans-serif; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        
+        #login-screen { position: fixed; inset: 0; background: #0f0f0f; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #login-screen input { padding: 15px; border-radius: 8px; border: 1px solid #333; background: #222; color: white; margin-bottom: 20px; font-size: 18px; text-align: center; }
+        #login-screen button { padding: 10px 30px; background: #3498db; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; }
+
+        .score-box { position: absolute; top: 20px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); width: 140px; }
+        #score-left { left: 20px; }
+        #score-right { right: 20px; }
+        .score-box h4 { margin: 0 0 5px 0; color: #3498db; font-size: 12px; }
+        .score-box div { font-size: 20px; font-weight: bold; }
+
+        #main-circle { width: 250px; height: 250px; border-radius: 50%; border: 8px solid #3498db; display: flex; align-items: center; justify-content: center; flex-direction: column; position: relative; transition: 0.3s; box-shadow: 0 0 30px rgba(52, 152, 219, 0.2); }
+        #main-circle.attacked { border-color: #e74c3c; box-shadow: 0 0 40px rgba(231, 76, 60, 0.5); animation: pulse 1s infinite; }
+        #pseudo-display { font-size: 24px; font-weight: bold; }
+        
+        #diffuse-btn { margin-top: 40px; padding: 15px 40px; border-radius: 30px; border: none; background: #e74c3c; color: white; font-weight: bold; cursor: pointer; opacity: 0.3; pointer-events: none; transition: 0.3s; }
+        #diffuse-btn.active { opacity: 1; pointer-events: auto; transform: scale(1.1); }
+
+        #panel-toggle { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); padding: 15px; background: #333; border: none; color: white; cursor: pointer; border-radius: 10px; }
+        #player-panel { position: absolute; right: -300px; top: 0; bottom: 0; width: 280px; background: #1a1a1a; border-left: 2px solid #333; transition: 0.4s; padding: 20px; display: flex; flex-direction: column; }
+        #player-panel.open { right: 0; }
+        #player-list { margin-top: 20px; overflow-y: auto; flex-grow: 1; }
+        .player-item { padding: 10px; background: #222; margin-bottom: 8px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
+        .player-item button { padding: 5px 10px; background: #e74c3c; border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .player-item button:disabled { background: #444; cursor: not-allowed; }
+
+        #alert-box { position: absolute; top: 150px; color: #e74c3c; font-weight: bold; display: none; }
+        
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+    <div id="login-screen">
+        <h1>Identité</h1>
+        <input type="text" id="p-input" placeholder="Ton pseudo...">
+        <button onclick="startD2()">Lancer</button>
+    </div>
+
+    <div id="score-left" class="score-box">
+        <h4>CIBLES TOUCHÉES</h4>
+        <div id="stat-hits">0</div>
+    </div>
+
+    <div id="score-right" class="score-box">
+        <h4>DIFFUSE STATS</h4>
+        <div id="stat-diffuse">S: 0 | R: 0</div>
+    </div>
+
+    <div id="alert-box">TENTATIVE D'INTRUSION - DÉSAMORÇAGE REQUIS !</div>
+
+    <div style="text-align: center;">
+        <div id="main-circle">
+            <span id="pseudo-display">...</span>
+            <div id="timer-display" style="font-size: 12px; margin-top: 5px;"></div>
+        </div>
+        <button id="diffuse-btn" onclick="tryDiffuse()">DIFFUSE</button>
+    </div>
+
+    <button id="panel-toggle" onclick="togglePanel()">PANNEL</button>
+    
+    <div id="player-panel">
+        <h3>Agents en ligne</h3>
+        <div id="player-list"></div>
+        <button onclick="togglePanel()" style="margin-top: 20px; background: none; border: 1px solid #444; color: #888; padding: 5px; cursor: pointer;">Fermer</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let myPseudo = "";
+        let attackerId = null;
+        let attackTimeout = null;
+        let attackCooldown = false;
+
+        function startD2() {
+            const val = document.getElementById('p-input').value.trim();
+            if(val) {
+                myPseudo = val;
+                document.getElementById('pseudo-display').innerText = myPseudo;
+                document.getElementById('login-screen').style.display = 'none';
+                socket.emit('join d2', myPseudo);
+            }
+        }
+
+        function togglePanel() {
+            document.getElementById('player-panel').classList.toggle('open');
+        }
+
+        socket.on('update d2', (players) => {
+            const list = document.getElementById('player-list');
+            list.innerHTML = "";
+            for(let id in players) {
+                if(id === socket.id) {
+                    document.getElementById('stat-hits').innerText = players[id].hits;
+                    document.getElementById('stat-diffuse').innerText = `S: ${players[id].diffuseSuccess} | R: ${players[id].diffuseFail}`;
+                    continue;
+                }
+                const div = document.createElement('div');
+                div.className = "player-item";
+                div.innerHTML = `<span>${players[id].name}</span> 
+                                 <button onclick="attack('${id}')" ${attackCooldown ? 'disabled' : ''}>Attaquer</button>`;
+                list.appendChild(div);
+            }
+        });
+
+        function attack(id) {
+            if(attackCooldown) return;
+            socket.emit('d2 attack', id);
+            attackCooldown = true;
+            setTimeout(() => { attackCooldown = false; socket.emit('join d2', myPseudo); }, 40000);
+            socket.emit('join d2', myPseudo);
+        }
+
+        socket.on('under attack', (id) => {
+            attackerId = id;
+            document.getElementById('main-circle').classList.add('attacked');
+            document.getElementById('alert-box').style.display = 'block';
+            document.getElementById('diffuse-btn').classList.add('active');
+            
+            let timeLeft = 10;
+            const timerEl = document.getElementById('timer-display');
+            timerEl.innerText = `${timeLeft}s`;
+            
+            const interval = setInterval(() => {
+                timeLeft--;
+                timerEl.innerText = `${timeLeft}s`;
+                if(timeLeft <= 0) clearInterval(interval);
+            }, 1000);
+
+            attackTimeout = setTimeout(() => {
+                clearInterval(interval);
+                failDiffuse();
+            }, 10000);
+        });
+
+        function tryDiffuse() {
+            if(attackerId) {
+                clearTimeout(attackTimeout);
+                socket.emit('d2 diffuse success');
+                resetState();
+            }
+        }
+
+        function failDiffuse() {
+            socket.emit('d2 attack success', attackerId);
+            resetState();
+        }
+
+        function resetState() {
+            attackerId = null;
+            document.getElementById('main-circle').classList.remove('attacked');
+            document.getElementById('alert-box').style.display = 'none';
+            document.getElementById('diffuse-btn').classList.remove('active');
+            document.getElementById('timer-display').innerText = "";
+        }
+
+        socket.on('play sound', (url) => {
+            const audio = new Audio(url);
+            audio.play().catch(e => console.log("Audio bloqué par le navigateur"));
+        });
+    </script>
+</body>
+</html>

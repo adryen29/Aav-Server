@@ -57,8 +57,18 @@
         let currentRoom = "";
         let currentImageData = null;
 
+        // --- SYSTEME DE PSEUDO AU DEBUT ---
+        window.onload = () => {
+            const savedUser = localStorage.getItem('user');
+            if (savedUser) {
+                // Si un pseudo existe, on l'affiche directement dans l'input pour info
+                document.getElementById('username-input').value = savedUser;
+            }
+        };
+
         socket.on('room list', (rooms) => {
-            const grid = document.getElementById('room-list'); grid.innerHTML = '';
+            const grid = document.getElementById('room-list'); 
+            grid.innerHTML = '';
             rooms.forEach(r => {
                 grid.innerHTML += `<div class="room-card ${r.isGlobal?'global-card':''}" onclick="openLogin('${r.name}')">
                     <strong>${r.name.toUpperCase()}</strong><br><small>${r.userCount} connectés</small>
@@ -67,20 +77,32 @@
             grid.innerHTML += `<button class="room-card add-btn" onclick="createNewRoom()">+</button>`;
         });
 
-        function openLogin(name) { currentRoom = name; document.getElementById('login-overlay').style.display = 'flex'; }
+        function openLogin(name) { 
+            currentRoom = name; 
+            const savedUser = localStorage.getItem('user');
+            // Si on a déjà un pseudo, on tente la connexion direct sans l'overlay
+            if(savedUser) {
+                socket.emit('check login', { username: savedUser, room: currentRoom });
+            } else {
+                document.getElementById('login-overlay').style.display = 'flex'; 
+            }
+        }
+
         function createNewRoom() { const n = prompt("Nom ?"); if(n) openLogin(n.toLowerCase()); }
+        
         function attemptLogin() {
             const user = document.getElementById('username-input').value.trim();
             if(user) socket.emit('check login', { username: user, room: currentRoom });
         }
+
         socket.on('login success', (data) => {
+            localStorage.setItem('user', data.username);
             document.getElementById('login-overlay').style.display = 'none';
             document.getElementById('selection-page').style.display = 'none';
             document.getElementById('chat-page').style.display = 'flex';
             document.getElementById('current-room-header').innerText = "# " + data.room;
         });
 
-        // PIXELISATION PHYSIQUE (80px)
         function handleImage(input) {
             const file = input.files[0]; if (!file) return;
             const reader = new FileReader();
@@ -91,9 +113,9 @@
                     const targetWidth = 80; const scale = targetWidth / img.width;
                     canvas.width = targetWidth; canvas.height = img.height * scale;
                     const ctx = canvas.getContext('2d');
-                    ctx.imageSmoothingEnabled = false; // Désactive lissage
+                    ctx.imageSmoothingEnabled = false;
                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    currentImageData = canvas.toDataURL('image/png'); // Ultra léger
+                    currentImageData = canvas.toDataURL('image/png');
                     alert("Image pixelisée chargée !");
                 };
                 img.src = e.target.result;
@@ -108,6 +130,7 @@
                 i.value = ''; currentImageData = null;
             }
         }
+
         socket.on('chat message', d => {
             const li = document.createElement('li');
             li.innerHTML = `<b>${d.user}:</b> ${d.text}`;

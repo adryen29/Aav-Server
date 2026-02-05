@@ -15,9 +15,16 @@ app.get('/list', (req, res) => res.sendFile(path.join(__dirname, 'public', 'list
 app.get('/api/games', (req, res) => {
     try {
         const files = fs.readdirSync(path.join(__dirname, 'public'));
-        const games = files.filter(f => f.startsWith('diapo') && f.endsWith('.html'))
-            .map(f => ({ id: f.replace('diapo', '').replace('.html', ''), url: f.replace('.html', ''), filename: f }))
-            .sort((a, b) => a.id - b.id);
+        // Correction : On vérifie que c'est bien diapo + des chiffres + .html
+        const games = files.filter(f => {
+            const match = f.match(/^diapo(\d+)\.html$/);
+            return match !== null;
+        })
+        .map(f => {
+            const id = f.replace('diapo', '').replace('.html', '');
+            return { id: id, url: f.replace('.html', ''), filename: f };
+        })
+        .sort((a, b) => parseInt(a.id) - parseInt(b.id));
         res.json(games);
     } catch (err) { res.status(500).json({ error: "Erreur" }); }
 });
@@ -31,6 +38,9 @@ app.get('/diapo:id', (req, res) => {
 let rooms = { 'global': { host: null, users: [], players: {} } };
 let gamePlayers = {}; 
 let highScores = []; 
+
+// Data spécifique pour Diapo2 (Cercle & Attaque)
+let d2Players = {};
 
 function emitRooms() {
     const list = Object.keys(rooms).map(n => ({
@@ -53,17 +63,54 @@ io.on('connection', (socket) => {
         emitRooms();
     });
 
+    // --- LOGIQUE COMMUNE / DIAPO 1 ---
     socket.on('start game', (name) => {
         const playerName = name || "Anonyme";
         gamePlayers[socket.id] = { 
             x: Math.random()*600+100, y: Math.random()*400+100, 
             angle: 0, color: `hsl(${Math.random()*360},70%,50%)`, 
-            id: socket.id, score: 0, name: playerName, alive: true
+            id: socket.id, score: 0, name: playerName, alive: true, protected: true
         };
+        setTimeout(() => { if(gamePlayers[socket.id]) gamePlayers[socket.id].protected = false; io.emit('state', gamePlayers); }, 2000);
         io.emit('state', gamePlayers);
         io.emit('highscores', highScores);
     });
 
+    // --- LOGIQUE DIAPO 2 (NOUVEAU) ---
+    socket.on('join d2', (name) => {
+        d2Players[socket.id] = { id: socket.id, name: name, hits: 0, diffuseSuccess: 0, diffuseFail: 0, attacking: false };
+        io.emit('update d2', d2Players);
+    });
+
+    socket.on('d2 attack', (targetId) => {
+        if(d2Players[socket.id] && d2Players[targetId] && socket.id !== targetId) {
+            io.to(targetId).emit('under attack', socket.id);
+        }
+    });
+
+    socket.on('d2 attack success', (attackerId) => {
+        if(d2Players[attackerId]) d2Players[attackerId].hits++;
+        if(d2Players[socket.id]) d2Players[socket.id].diffuseFail++;
+        // Choix d'un son aléatoire dans public/Sounds
+        try {
+            const soundDir = path.join(__dirname, 'public', 'Sounds');
+            if(fs.existsSync(soundDir)) {
+                const sounds = fs.readdirSync(soundDir);
+                if(sounds.length > 0) {
+                    const randomSound = sounds[Math.floor(Math.random() * sounds.length)];
+                    io.to(socket.id).emit('play sound', `/Sounds/${randomSound}`);
+                }
+            }
+        } catch(e) {}
+        io.emit('update d2', d2Players);
+    });
+
+    socket.on('d2 diffuse success', () => {
+        if(d2Players[socket.id]) d2Players[socket.id].diffuseSuccess++;
+        io.emit('update d2', d2Players);
+    });
+
+    // --- LOGIQUE GENERALE ---
     socket.on('move', (d) => {
         const p = gamePlayers[socket.id];
         if(p && p.alive) {
@@ -77,7 +124,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('shoot', (d) => {
-        if(gamePlayers[socket.id] && gamePlayers[socket.id].alive) {
+        const p = gamePlayers[socket.id];
+        if(p && p.alive && !p.protected) {
             io.emit('bullet', { x: d.x, y: d.y, angle: d.angle, owner: socket.id });
         }
     });
@@ -85,7 +133,7 @@ io.on('connection', (socket) => {
     socket.on('hit', (data) => {
         const victim = gamePlayers[data.victimId];
         const shooter = gamePlayers[data.shooterId];
-        if(victim && victim.alive && shooter) {
+        if(victim && victim.alive && !victim.protected && shooter) {
             victim.alive = false;
             shooter.score += 1;
             let found = highScores.find(h => h.name === shooter.name);
@@ -98,9 +146,16 @@ io.on('connection', (socket) => {
             setTimeout(() => {
                 if(gamePlayers[data.victimId]) {
                     gamePlayers[data.victimId].alive = true;
+                    gamePlayers[data.victimId].protected = true;
                     gamePlayers[data.victimId].x = Math.random()*600+100;
                     gamePlayers[data.victimId].y = Math.random()*400+100;
                     io.emit('state', gamePlayers);
+                    setTimeout(() => {
+                        if(gamePlayers[data.victimId]) {
+                            gamePlayers[data.victimId].protected = false;
+                            io.emit('state', gamePlayers);
+                        }
+                    }, 2000);
                 }
             }, 3000);
         }
@@ -121,8 +176,16 @@ io.on('connection', (socket) => {
             emitRooms();
         }
         delete gamePlayers[socket.id];
+        delete d2Players[socket.id];
         io.emit('state', gamePlayers);
+        io.emit('update d2', d2Players);
     });
 });
 
-server.listen(3000);
+// ANTI-SLEEP RENDER
+const URL_DE_TON_SITE = "https://ton-site.onrender.com"; 
+setInterval(() => {
+    http.get(URL_DE_TON_SITE, (res) => { console.log("Réveil OK"); }).on('error', (e) => {});
+}, 600000);
+
+server.listen(process.env.PORT || 3000);
