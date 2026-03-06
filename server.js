@@ -15,7 +15,6 @@ app.get('/list', (req, res) => res.sendFile(path.join(__dirname, 'public', 'list
 app.get('/api/games', (req, res) => {
     try {
         const files = fs.readdirSync(path.join(__dirname, 'public'));
-        // Correction : On vérifie que c'est bien diapo + des chiffres + .html
         const games = files.filter(f => {
             const match = f.match(/^diapo(\d+)\.html$/);
             return match !== null;
@@ -39,8 +38,9 @@ let rooms = { 'global': { host: null, users: [], players: {} } };
 let gamePlayers = {}; 
 let highScores = []; 
 
-// Data spécifique pour Diapo2 (Cercle & Attaque)
+// Data spécifique pour Diapo2
 let d2Players = {};
+let globalPointerTarget = null; 
 
 function emitRooms() {
     const list = Object.keys(rooms).map(n => ({
@@ -48,6 +48,20 @@ function emitRooms() {
     }));
     io.emit('room list', list);
 }
+
+// Fonction utilitaire pour donner un powerup aléatoire
+function giveRandomPowerup(socketId) {
+    const powers = ['freeze', 'adware', 'nocooldown', 'reflectance', 'flashbang', 'halftime', 'pointer'];
+    const randomPower = powers[Math.floor(Math.random() * powers.length)];
+    io.to(socketId).emit('give powerup', randomPower);
+}
+
+// Power Up automatique toutes les 4 minutes (240000 ms)
+setInterval(() => {
+    for (let id in d2Players) {
+        giveRandomPowerup(id);
+    }
+}, 240000);
 
 io.on('connection', (socket) => {
     emitRooms();
@@ -63,7 +77,6 @@ io.on('connection', (socket) => {
         emitRooms();
     });
 
-    // --- LOGIQUE COMMUNE / DIAPO 1 ---
     socket.on('start game', (name) => {
         const playerName = name || "Anonyme";
         gamePlayers[socket.id] = { 
@@ -78,26 +91,70 @@ io.on('connection', (socket) => {
 
     // --- LOGIQUE DIAPO 2 ---
     socket.on('join d2', (name) => {
-        d2Players[socket.id] = { id: socket.id, name: name, hits: 0, diffuseSuccess: 0, diffuseFail: 0, attacking: false, isUnderAttack: false };
+        d2Players[socket.id] = { 
+            id: socket.id, 
+            name: name, 
+            hits: 0, 
+            diffuseSuccess: 0, 
+            diffuseFail: 0, 
+            attacking: false, 
+            isUnderAttack: false,
+            attackQueue: [] 
+        };
         io.emit('update d2', d2Players);
     });
 
     socket.on('d2 attack', (targetId) => {
-        if(d2Players[socket.id] && d2Players[targetId] && socket.id !== targetId) {
-            if(!d2Players[targetId].isUnderAttack) {
-                d2Players[targetId].isUnderAttack = true;
-                const endTime = Date.now() + 10000; // Fin dans 10 secondes
-                io.to(targetId).emit('under attack', { attackerId: socket.id, endTime: endTime });
+        if(d2Players[socket.id] && d2Players[targetId]) {
+            let finalTarget = globalPointerTarget && d2Players[globalPointerTarget] ? globalPointerTarget : targetId;
+            
+            if(socket.id !== finalTarget) {
+                d2Players[finalTarget].attackQueue.push({
+                    attackerId: socket.id,
+                    duration: 10000
+                });
+                d2Players[finalTarget].isUnderAttack = true;
+                io.to(finalTarget).emit('new attack in queue', d2Players[finalTarget].attackQueue);
                 io.emit('update d2', d2Players);
             }
         }
     });
 
+    socket.on('d2 use powerup', (data) => {
+        if (data.type === 'pointer') {
+            globalPointerTarget = data.targetId;
+            io.emit('pointer alert', d2Players[data.targetId] ? d2Players[data.targetId].name : "quelqu'un");
+            setTimeout(() => { globalPointerTarget = null; }, 10000);
+        } else {
+            io.to(data.targetId).emit('receive powerup', { type: data.type, attackerId: socket.id });
+        }
+    });
+
+    // Nouveau : Gère la demande automatique ou suite à un hit venant du client
+    socket.on('request powerup auto', () => {
+        if(d2Players[socket.id]) giveRandomPowerup(socket.id);
+    });
+
+    socket.on('request powerup hit', () => {
+        // La probabilité 1/4 est gérée côté client comme demandé, mais on peut la doubler ici par sécurité
+        if(d2Players[socket.id]) giveRandomPowerup(socket.id);
+    });
+
     socket.on('d2 attack success', (attackerId) => {
-        if(d2Players[attackerId]) d2Players[attackerId].hits++;
+        if(d2Players[attackerId]) {
+            d2Players[attackerId].hits++;
+            
+            // 1 chance sur 4 de donner un power up à l'attaquant lors d'un hit réussi
+            if (Math.random() < 0.25) {
+                giveRandomPowerup(attackerId);
+            }
+        }
+        
         if(d2Players[socket.id]) {
             d2Players[socket.id].diffuseFail++;
-            d2Players[socket.id].isUnderAttack = false;
+            d2Players[socket.id].attackQueue.shift();
+            d2Players[socket.id].isUnderAttack = d2Players[socket.id].attackQueue.length > 0;
+            io.to(socket.id).emit('new attack in queue', d2Players[socket.id].attackQueue);
         }
         
         try {
@@ -116,7 +173,9 @@ io.on('connection', (socket) => {
     socket.on('d2 diffuse success', () => {
         if(d2Players[socket.id]) {
             d2Players[socket.id].diffuseSuccess++;
-            d2Players[socket.id].isUnderAttack = false;
+            d2Players[socket.id].attackQueue.shift();
+            d2Players[socket.id].isUnderAttack = d2Players[socket.id].attackQueue.length > 0;
+            io.to(socket.id).emit('new attack in queue', d2Players[socket.id].attackQueue);
         }
         io.emit('update d2', d2Players);
     });
@@ -147,6 +206,11 @@ io.on('connection', (socket) => {
         if(victim && victim.alive && !victim.protected && shooter) {
             victim.alive = false;
             shooter.score += 1;
+
+            if (Math.random() < 0.25) {
+                giveRandomPowerup(data.shooterId);
+            }
+
             let found = highScores.find(h => h.name === shooter.name);
             if(found) { if(shooter.score > found.score) found.score = shooter.score; }
             else { highScores.push({name: shooter.name, score: shooter.score}); }
@@ -193,7 +257,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// ANTI-SLEEP RENDER
 const URL_DE_TON_SITE = "https://ton-site.onrender.com"; 
 setInterval(() => {
     http.get(URL_DE_TON_SITE, (res) => { console.log("Réveil OK"); }).on('error', (e) => {});
