@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Cercle Tactique</title>
+    <title>Cercle Tactique - Power Ups</title>
     <style>
         body { margin: 0; background: #0f0f0f; color: white; font-family: sans-serif; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
         
@@ -18,25 +18,96 @@
 
         #main-circle { width: 250px; height: 250px; border-radius: 50%; border: 8px solid #3498db; display: flex; align-items: center; justify-content: center; flex-direction: column; position: relative; transition: 0.3s; box-shadow: 0 0 30px rgba(52, 152, 219, 0.2); }
         #main-circle.attacked { border-color: #e74c3c; box-shadow: 0 0 40px rgba(231, 76, 60, 0.5); animation: pulse 1s infinite; }
+        #main-circle.frozen { border-color: #34e7e4 !important; box-shadow: 0 0 40px #34e7e4 !important; animation: none !important; opacity: 0.8; }
         #pseudo-display { font-size: 24px; font-weight: bold; }
+        #queue-count { font-size: 14px; color: #e74c3c; margin-top: 5px; font-weight: bold; }
         
-        #diffuse-btn { margin-top: 40px; padding: 15px 40px; border-radius: 30px; border: none; background: #e74c3c; color: white; font-weight: bold; cursor: pointer; opacity: 0.3; pointer-events: none; transition: 0.3s; }
+        #diffuse-btn { margin-top: 40px; padding: 15px 40px; border-radius: 30px; border: none; background: #e74c3c; color: white; font-weight: bold; cursor: pointer; opacity: 0.3; pointer-events: none; transition: 0.3s; position: relative; z-index: 5; font-size: 16px; }
         #diffuse-btn.active { opacity: 1; pointer-events: auto; transform: scale(1.1); }
+        #diffuse-btn.blocked { background: #222 !important; color: #555 !important; pointer-events: none !important; transform: scale(1) !important; border: 1px solid #444; }
+        #diffuse-btn.guess-locked { background: #555 !important; color: #aaa !important; pointer-events: auto !important; transform: scale(1) !important; border: 1px solid #777; opacity: 1 !important; }
 
-        #panel-toggle { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); padding: 15px; background: #333; border: none; color: white; cursor: pointer; border-radius: 10px; }
-        #player-panel { position: absolute; right: -300px; top: 0; bottom: 0; width: 280px; background: #1a1a1a; border-left: 2px solid #333; transition: 0.4s; padding: 20px; display: flex; flex-direction: column; }
+        #panel-toggle { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); padding: 15px; background: #333; border: none; color: white; cursor: pointer; border-radius: 10px; z-index: 10; }
+        #player-panel { position: absolute; right: -300px; top: 0; bottom: 0; width: 280px; background: #1a1a1a; border-left: 2px solid #333; transition: 0.4s; padding: 20px; display: flex; flex-direction: column; z-index: 20; }
         #player-panel.open { right: 0; }
-        #player-list { margin-top: 20px; overflow-y: auto; flex-grow: 1; }
-        .player-item { padding: 10px; background: #222; margin-bottom: 8px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
-        .player-item button { padding: 5px 10px; background: #e74c3c; border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 12px; }
-        .player-item button:disabled { background: #444; cursor: not-allowed; }
-
-        #alert-box { position: absolute; top: 150px; color: #e74c3c; font-weight: bold; display: none; }
         
+        #power-toggle { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); padding: 15px; background: #333; border: none; color: #f1c40f; cursor: pointer; border-radius: 10px; z-index: 10; }
+        #power-panel { position: absolute; left: -300px; top: 0; bottom: 0; width: 280px; background: #1a1a1a; border-right: 2px solid #333; transition: 0.4s; padding: 20px; display: flex; flex-direction: column; z-index: 20; }
+        #power-panel.open { left: 0; }
+
+        #player-list, #power-list { margin-top: 20px; overflow-y: auto; flex-grow: 1; }
+        .player-item, .power-item { padding: 10px; background: #222; margin-bottom: 8px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; }
+        .player-item button, .power-item button { padding: 5px 10px; background: #e74c3c; border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 12px; transition: 0.2s; }
+        .power-item button { background: #f1c40f; color: black; font-weight: bold; }
+        .power-item.selected { border: 2px solid #f1c40f; background: #333; }
+        .player-item button:disabled { background: #111 !important; color: #444 !important; border: 1px solid #333; cursor: not-allowed; opacity: 1; }
+        .player-item button.ready-for-power { background: #f1c40f !important; color: black !important; animation: blink 0.5s infinite; }
+
+        #alert-box { position: absolute; top: 150px; color: #e74c3c; font-weight: bold; display: none; z-index: 5; text-align: center; }
+        #flashbang-overlay { position: fixed; inset: 0; background: white; z-index: 9999; display: none; pointer-events: none; }
+
+        .spam-popup { position: fixed; background: #eee; color: black; border: 2px solid #666; padding: 10px; border-radius: 5px; z-index: 1000; box-shadow: 5px 5px 15px rgba(0,0,0,0.5); }
+        .spam-close { position: absolute; top: 0; right: 0; background: red; color: white; padding: 2px 5px; cursor: pointer; font-size: 10px; }
+
+        /* ===== MINI-JEUX ===== */
+        #minigame-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.92);
+            z-index: 500;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        #minigame-overlay.active { display: flex; }
+        #mg-attack-timer { font-size: 14px; color: #e74c3c; font-weight: bold; margin-bottom: 14px; letter-spacing: 1px; }
+
+        .minigame-box { background: #1a1a1a; border: 2px solid #3498db; border-radius: 16px; padding: 30px 35px; text-align: center; min-width: 320px; max-width: 420px; }
+        .minigame-box h3 { margin: 0 0 8px 0; color: #3498db; font-size: 20px; letter-spacing: 1px; }
+        .minigame-box p { margin: 5px 0; color: #aaa; font-size: 14px; }
+
+        /* Turn the Circle */
+        #tc-circle { width: 130px; height: 130px; border-radius: 50%; border: 7px solid #e74c3c; margin: 18px auto; position: relative; transition: transform 0.35s cubic-bezier(0.4,0,0.2,1), border-color 0.3s; }
+        #tc-circle.success { border-color: #2ecc71 !important; box-shadow: 0 0 25px rgba(46,204,113,0.5); }
+        #tc-arrow { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 5px; height: 50px; background: white; border-radius: 3px; }
+        #tc-round-info { font-size: 13px; color: #f1c40f; margin: 5px 0 15px 0; font-weight: bold; }
+
+        /* Click Numbers */
+        #cn-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 18px auto; max-width: 310px; }
+        .num-btn { padding: 14px 0; border-radius: 8px; border: 2px solid #444; background: #222; color: white; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.15s; }
+        .num-btn:hover { background: #333; border-color: #666; }
+        .num-btn.correct { background: #27ae60 !important; border-color: #2ecc71 !important; cursor: default; }
+        .num-btn.wrong { background: #c0392b !important; border-color: #e74c3c !important; animation: shake 0.3s; }
+        #cn-next-info { font-size: 16px; color: #f1c40f; font-weight: bold; margin: 8px 0; }
+
+        /* Guess Number */
+        #gn-input { padding: 12px; font-size: 22px; width: 90px; text-align: center; background: #222; border: 2px solid #444; color: white; border-radius: 8px; margin: 12px 8px; outline: none; }
+        #gn-hint { font-size: 22px; font-weight: bold; min-height: 34px; margin: 8px 0; }
+        #gn-attempts-info { font-size: 13px; color: #aaa; }
+
+        /* Morpion */
+        #mp-grid { display: grid; grid-template-columns: repeat(3, 80px); gap: 6px; margin: 18px auto; width: fit-content; }
+        .mp-cell { width: 80px; height: 80px; background: #222; border: 2px solid #444; border-radius: 8px; font-size: 38px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s; user-select: none; }
+        .mp-cell:hover:not(.filled) { background: #2a2a2a; border-color: #555; }
+        .mp-cell.filled { cursor: default; }
+        .mp-cell.x { color: #e74c3c; }
+        .mp-cell.o { color: #3498db; }
+        #mp-status { font-size: 15px; font-weight: bold; color: #f1c40f; min-height: 24px; margin: 8px 0; }
+
+        .mg-btn { padding: 10px 22px; border-radius: 8px; border: none; background: #3498db; color: white; font-weight: bold; cursor: pointer; margin: 5px; font-size: 14px; transition: 0.15s; }
+        .mg-btn:hover { background: #2980b9; }
+        .mg-btn.red { background: #e74c3c; }
+        .mg-btn.red:hover { background: #c0392b; }
+
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
     </style>
 </head>
 <body>
+
+    <div id="flashbang-overlay"></div>
+
     <div id="login-screen">
         <h1>Identité</h1>
         <input type="text" id="p-input" placeholder="Ton pseudo...">
@@ -58,29 +129,121 @@
     <div style="text-align: center;">
         <div id="main-circle">
             <span id="pseudo-display">...</span>
+            <div id="queue-count"></div>
             <div id="timer-display" style="font-size: 12px; margin-top: 5px;"></div>
         </div>
         <button id="diffuse-btn" onclick="tryDiffuse()">DIFFUSE</button>
     </div>
 
+    <button id="power-toggle" onclick="togglePower()">POWERS</button>
+    <div id="power-panel">
+        <h3 id="power-status">Power Ups</h3>
+        <div id="power-list"></div>
+        <button onclick="togglePower()" style="margin-top: 20px; background: none; border: 1px solid #444; color: #888; padding: 5px; cursor: pointer;">Fermer</button>
+    </div>
+
     <button id="panel-toggle" onclick="togglePanel()">PANNEL</button>
-    
     <div id="player-panel">
         <h3>Agents en ligne</h3>
         <div id="player-list"></div>
         <button onclick="togglePanel()" style="margin-top: 20px; background: none; border: 1px solid #444; color: #888; padding: 5px; cursor: pointer;">Fermer</button>
     </div>
 
+    <!-- ===== OVERLAY MINI-JEUX ===== -->
+    <div id="minigame-overlay">
+        <div id="mg-attack-timer"></div>
+
+        <!-- 1. TURN THE CIRCLE -->
+        <div class="minigame-box" id="mg-turn-circle" style="display:none">
+            <h3>🔄 TOURNE LE CERCLE</h3>
+            <p>Remets l'indicateur vers le haut !</p>
+            <p id="tc-round-info">Manche 1 / 3</p>
+            <div id="tc-circle"><div id="tc-arrow"></div></div>
+            <div>
+                <button class="mg-btn red" onclick="rotateTCLeft()">↺ Gauche</button>
+                <button class="mg-btn red" onclick="rotateTCRight()">Droite ↻</button>
+            </div>
+        </div>
+
+        <!-- 2. CLICK THE NUMBERS -->
+        <div class="minigame-box" id="mg-click-numbers" style="display:none">
+            <h3>🔢 CLIQUE LES CHIFFRES</h3>
+            <p>Clique de 1 à 10 dans l'ordre !</p>
+            <p id="cn-next-info">Prochain : <b style="color:#f1c40f">1</b></p>
+            <div id="cn-grid"></div>
+        </div>
+
+        <!-- 3. GUESS THE NUMBER -->
+        <div class="minigame-box" id="mg-guess-number" style="display:none">
+            <h3>🎯 DEVINE LE CHIFFRE</h3>
+            <p>Un chiffre entre 1 et 9 — 3 essais</p>
+            <p id="gn-attempts-info">3 essais restants</p>
+            <div>
+                <input type="number" id="gn-input" min="1" max="9" placeholder="?" onkeydown="if(event.key==='Enter') submitGuess()">
+                <button class="mg-btn" onclick="submitGuess()">Valider</button>
+            </div>
+            <div id="gn-hint"></div>
+        </div>
+
+        <!-- 4. MORPION -->
+        <div class="minigame-box" id="mg-morpion" style="display:none">
+            <h3>❌ MORPION</h3>
+            <p>Gagne contre le bot pour diffuser ! <b style="color:#3498db">(Tu es O)</b></p>
+            <p id="mp-status">Le bot réfléchit...</p>
+            <div id="mp-grid">
+                <div class="mp-cell" onclick="playerPlayMP(0)"></div>
+                <div class="mp-cell" onclick="playerPlayMP(1)"></div>
+                <div class="mp-cell" onclick="playerPlayMP(2)"></div>
+                <div class="mp-cell" onclick="playerPlayMP(3)"></div>
+                <div class="mp-cell" onclick="playerPlayMP(4)"></div>
+                <div class="mp-cell" onclick="playerPlayMP(5)"></div>
+                <div class="mp-cell" onclick="playerPlayMP(6)"></div>
+                <div class="mp-cell" onclick="playerPlayMP(7)"></div>
+                <div class="mp-cell" onclick="playerPlayMP(8)"></div>
+            </div>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
+
+        // ============================================================
+        // ADWARE - Ajoute ici toutes les phrases que tu veux !
+        // ============================================================
+        const adwarePhrases = [
+            "Veuillez acheter le cassoulet Rannou à 99€ seulement",
+            "Vous avez un virus !! Cliquez ICI",
+            "Donation pour les enfants affamés ?",
+            "Gagnez un iPhone 25 en cliquant sur la croix",
+            "Votre PC va exploser dans 3... 2...",
+            "Rencontrez des célibataires dans votre salon"
+        ];
+
+        // ============================================================
+        // STATE PRINCIPAL
+        // ============================================================
         const socket = io();
         let myPseudo = "";
-        let attackerId = null;
-        let globalEndTime = null;
+        let currentAttacks = [];
         let updateInterval = null;
         let attackCooldown = false;
 
-        // --- ANTI-AUTOCLICK ---
+        let myPowers = [];
+        let selectedPowerIndex = null;
+        let isFrozen = false;
+        let isReflecting = false;
+        let noCooldownActive = false;
+        let halfTimeActive = false;
+        let lastPlayersData = {};
+        let wasUnderAttack = false;
+        let ncAttackCounts = {};
+
+        // Bloqué après échec au guess number, reset au prochain impact
+        let guessLocked = false;
+
+        // Mini-jeu actif ?
+        let miniGameActive = false;
+
         let clickTimestamps = [];
         function checkClickSpeed() {
             const now = Date.now();
@@ -92,98 +255,542 @@
             }
         }
 
+        // ============================================================
+        // DÉMARRAGE
+        // ============================================================
         function startD2() {
             const val = document.getElementById('p-input').value.trim();
-            if(val) {
+            if (val) {
                 myPseudo = val;
                 document.getElementById('pseudo-display').innerText = myPseudo;
                 document.getElementById('login-screen').style.display = 'none';
                 socket.emit('join d2', myPseudo);
+                if (updateInterval) clearInterval(updateInterval);
+                updateInterval = setInterval(manageAttackTimers, 100);
+                setInterval(() => { socket.emit('request powerup auto'); }, 240000);
             }
         }
 
-        function togglePanel() {
-            document.getElementById('player-panel').classList.toggle('open');
-        }
+        function togglePanel() { document.getElementById('player-panel').classList.toggle('open'); }
+        function togglePower() { document.getElementById('power-panel').classList.toggle('open'); }
 
+        // ============================================================
+        // JOUEURS
+        // ============================================================
         socket.on('update d2', (players) => {
+            lastPlayersData = players;
+            renderPlayerList();
+        });
+
+        function renderPlayerList() {
             const list = document.getElementById('player-list');
             list.innerHTML = "";
-            for(let id in players) {
-                if(id === socket.id) {
-                    document.getElementById('stat-hits').innerText = players[id].hits;
-                    document.getElementById('stat-diffuse').innerText = `S: ${players[id].diffuseSuccess} | R: ${players[id].diffuseFail}`;
+            for (let id in lastPlayersData) {
+                if (id === socket.id) {
+                    document.getElementById('stat-hits').innerText = lastPlayersData[id].hits;
+                    document.getElementById('stat-diffuse').innerText = `S: ${lastPlayersData[id].diffuseSuccess} | R: ${lastPlayersData[id].diffuseFail}`;
                     continue;
                 }
                 const div = document.createElement('div');
                 div.className = "player-item";
-                const isTargetBusy = players[id].isUnderAttack;
-                div.innerHTML = `<span>${players[id].name} ${isTargetBusy ? '(Verrouillée)' : ''}</span> 
-                                 <button onclick="attack('${id}')" ${ (attackCooldown || isTargetBusy) ? 'disabled' : ''}>Attaquer</button>`;
+                let canAttack = true;
+                if (noCooldownActive) { if ((ncAttackCounts[id] || 0) >= 3) canAttack = false; }
+                else if (attackCooldown) { canAttack = false; }
+                const btnClass = (selectedPowerIndex !== null) ? "ready-for-power" : "";
+                let btnText = (selectedPowerIndex !== null) ? "Lancer Power" : "Attaquer";
+                if (noCooldownActive && selectedPowerIndex === null) btnText = `NC (${3 - (ncAttackCounts[id] || 0)})`;
+                div.innerHTML = `<span>${lastPlayersData[id].name} (${lastPlayersData[id].attackQueue.length} att.)</span>
+                                 <button class="${btnClass}" onclick="handlePlayerClick('${id}')" ${(selectedPowerIndex === null && !canAttack) ? 'disabled' : ''}>${btnText}</button>`;
                 list.appendChild(div);
             }
-        });
-
-        function attack(id) {
-            if(attackCooldown) return;
-            checkClickSpeed();
-            socket.emit('d2 attack', id);
-            attackCooldown = true;
-            setTimeout(() => { attackCooldown = false; socket.emit('join d2', myPseudo); }, 40000);
-            socket.emit('join d2', myPseudo);
         }
 
-        socket.on('under attack', (data) => {
-            attackerId = data.attackerId;
-            globalEndTime = data.endTime;
-            
-            document.getElementById('main-circle').classList.add('attacked');
-            document.getElementById('alert-box').style.display = 'block';
-            document.getElementById('diffuse-btn').classList.add('active');
-            
-            if(updateInterval) clearInterval(updateInterval);
-            
-            updateInterval = setInterval(() => {
-                const now = Date.now();
-                const remaining = Math.ceil((globalEndTime - now) / 1000);
-                
-                if(remaining <= 0) {
-                    clearInterval(updateInterval);
-                    document.getElementById('timer-display').innerText = "0s";
-                    failDiffuse();
-                } else {
-                    document.getElementById('timer-display').innerText = `${remaining}s`;
+        // ============================================================
+        // GESTION DES ATTAQUES
+        // ============================================================
+        socket.on('new attack in queue', (queue) => {
+            const now = Date.now();
+            currentAttacks = queue.map((att) => {
+                const existing = currentAttacks.find(a => a.attackerId === att.attackerId && a.localEndTime);
+                if (existing) { att.localEndTime = existing.localEndTime; }
+                else {
+                    const duration = halfTimeActive ? 7500 : 15000; // 15 secondes
+                    att.localEndTime = now + duration;
                 }
-            }, 200);
+                return att;
+            });
+            if (currentAttacks.length === 0) resetState();
+            updateQueueDisplay();
         });
 
-        function tryDiffuse() {
-            if(attackerId) {
-                checkClickSpeed();
-                if(updateInterval) clearInterval(updateInterval);
+        function manageAttackTimers() {
+            if (isFrozen || currentAttacks.length === 0) {
+                if (currentAttacks.length === 0 && wasUnderAttack) {
+                    resetState();
+                    wasUnderAttack = false;
+                }
+                return;
+            }
+            wasUnderAttack = true;
+
+            const now = Date.now();
+            const currentAtt = currentAttacks[0];
+
+            if (isReflecting) {
                 socket.emit('d2 diffuse success');
-                resetState();
+                socket.emit('d2 attack', currentAtt.attackerId);
+                isReflecting = false;
+                return;
+            }
+
+            const remaining = Math.ceil((currentAtt.localEndTime - now) / 1000);
+
+            // Timer visible dans le mini-jeu si actif
+            if (miniGameActive) {
+                document.getElementById('mg-attack-timer').innerText = `⏱️ ATTAQUE EN COURS — ${remaining}s restantes`;
+            }
+
+            if (remaining <= 0) {
+                failDiffuse();
+            } else {
+                document.getElementById('main-circle').classList.add('attacked');
+                document.getElementById('alert-box').style.display = 'block';
+                document.getElementById('timer-display').innerText = `${remaining}s`;
+                checkAdwareStatus();
+
+                const btn = document.getElementById('diffuse-btn');
+                if (guessLocked) {
+                    btn.classList.add('active');
+                    btn.classList.add('guess-locked');
+                    btn.innerText = '🔒 BLOQUÉ';
+                } else {
+                    btn.classList.add('active');
+                    btn.classList.remove('guess-locked');
+                    btn.innerText = 'DIFFUSE';
+                }
+            }
+        }
+
+        function updateQueueDisplay() {
+            const el = document.getElementById('queue-count');
+            el.innerText = currentAttacks.length > 1 ? `+${currentAttacks.length - 1} en attente` : "";
+        }
+
+        function tryDiffuse() {
+            if (isFrozen || document.querySelectorAll('.spam-popup').length > 0) return;
+            if (guessLocked) return;
+            if (currentAttacks.length > 0) {
+                checkClickSpeed();
+                // 50% de chance de déclencher un mini-jeu
+                if (Math.random() < 0.5) {
+                    launchRandomMiniGame();
+                } else {
+                    socket.emit('d2 diffuse success');
+                }
             }
         }
 
         function failDiffuse() {
-            socket.emit('d2 attack success', attackerId);
-            resetState();
+            if (currentAttacks.length === 0) return;
+            if (miniGameActive) closeMiniGame();
+            const attack = currentAttacks[0];
+            socket.emit('d2 attack success', attack.attackerId);
+            guessLocked = false; // un impact débloque le verrou guess
+            if (Math.random() < 0.25) socket.emit('request powerup hit');
         }
 
         function resetState() {
-            attackerId = null;
-            globalEndTime = null;
             document.getElementById('main-circle').classList.remove('attacked');
             document.getElementById('alert-box').style.display = 'none';
-            document.getElementById('diffuse-btn').classList.remove('active');
+            document.getElementById('alert-box').innerText = "TENTATIVE D'INTRUSION - DÉSAMORÇAGE REQUIS !";
+            const btn = document.getElementById('diffuse-btn');
+            btn.classList.remove('active');
+            btn.classList.remove('blocked');
+            btn.classList.remove('guess-locked');
+            btn.innerText = 'DIFFUSE';
             document.getElementById('timer-display').innerText = "";
+            document.getElementById('queue-count').innerText = "";
+            checkAdwareStatus();
         }
 
-        socket.on('play sound', (url) => {
-            const audio = new Audio(url);
-            audio.play().catch(e => console.log("Audio bloqué"));
+        // ============================================================
+        // POWER UPS
+        // ============================================================
+        socket.on('give powerup', (type) => { myPowers.push(type); updatePowerList(); });
+
+        function updatePowerList() {
+            const list = document.getElementById('power-list');
+            list.innerHTML = "";
+            myPowers.forEach((p, index) => {
+                const div = document.createElement('div');
+                div.className = "power-item" + (selectedPowerIndex === index ? " selected" : "");
+                div.innerHTML = `<span>${p.toUpperCase()}</span><button onclick="selectPower(${index})">${selectedPowerIndex === index ? 'ANNULER' : 'CHOISIR'}</button>`;
+                list.appendChild(div);
+            });
+        }
+
+        function selectPower(index) {
+            if (selectedPowerIndex === index) { selectedPowerIndex = null; }
+            else {
+                selectedPowerIndex = index;
+                const type = myPowers[index];
+                if (type === 'nocooldown' || type === 'reflectance') { executePower(null); }
+                else { if (!document.getElementById('player-panel').classList.contains('open')) togglePanel(); }
+            }
+            updatePowerList(); renderPlayerList();
+        }
+
+        function executePower(targetId) {
+            if (selectedPowerIndex === null) return;
+            const type = myPowers[selectedPowerIndex];
+            myPowers.splice(selectedPowerIndex, 1);
+            selectedPowerIndex = null;
+            if (type === 'nocooldown') {
+                noCooldownActive = true; ncAttackCounts = {};
+                setTimeout(() => { noCooldownActive = false; ncAttackCounts = {}; renderPlayerList(); }, 15000);
+            } else if (type === 'reflectance') {
+                isReflecting = true;
+                setTimeout(() => { isReflecting = false; }, 30000);
+            } else if (targetId) {
+                socket.emit('d2 use powerup', { type: type, targetId: targetId });
+            }
+            updatePowerList(); renderPlayerList();
+        }
+
+        function handlePlayerClick(id) {
+            if (selectedPowerIndex !== null) { executePower(id); }
+            else {
+                if (noCooldownActive) {
+                    if ((ncAttackCounts[id] || 0) < 3) {
+                        ncAttackCounts[id] = (ncAttackCounts[id] || 0) + 1;
+                        checkClickSpeed(); socket.emit('d2 attack', id); renderPlayerList();
+                    }
+                } else {
+                    if (attackCooldown) return;
+                    checkClickSpeed(); socket.emit('d2 attack', id);
+                    attackCooldown = true; renderPlayerList();
+                    setTimeout(() => { attackCooldown = false; renderPlayerList(); }, 40000);
+                }
+            }
+        }
+
+        socket.on('receive powerup', (data) => {
+            if (data.type === 'freeze') {
+                isFrozen = true;
+                document.getElementById('main-circle').classList.add('frozen');
+                setTimeout(() => { isFrozen = false; document.getElementById('main-circle').classList.remove('frozen'); }, 3333);
+            } else if (data.type === 'adware') {
+                for (let i = 0; i < 5; i++) createAdware();
+                checkAdwareStatus();
+            } else if (data.type === 'flashbang') {
+                document.getElementById('flashbang-overlay').style.display = 'block';
+                setTimeout(() => { document.getElementById('flashbang-overlay').style.display = 'none'; }, 3000);
+            } else if (data.type === 'halftime') {
+                halfTimeActive = true;
+                setTimeout(() => { halfTimeActive = false; }, 10000);
+            }
         });
+
+        function createAdware() {
+            const spam = document.createElement('div');
+            spam.className = 'spam-popup';
+            const size = Math.floor(Math.random() * 100) + 150;
+            spam.style.width = size + 'px';
+            spam.style.top = Math.random() * 80 + 10 + '%';
+            spam.style.left = Math.random() * 80 + 10 + '%';
+            spam.innerHTML = `<span class="spam-close" onclick="this.parentElement.remove(); checkAdwareStatus();">X</span>
+                              <p style="font-size:12px"><b>ADWARE</b><br>${adwarePhrases[Math.floor(Math.random() * adwarePhrases.length)]}</p>`;
+            document.body.appendChild(spam);
+        }
+
+        function checkAdwareStatus() {
+            const btn = document.getElementById('diffuse-btn');
+            if (document.querySelectorAll('.spam-popup').length > 0) { btn.classList.add('blocked'); }
+            else { btn.classList.remove('blocked'); }
+        }
+
+        socket.on('pointer alert', (name) => {
+            const alertBox = document.getElementById('alert-box');
+            alertBox.style.display = 'block';
+            alertBox.innerText = `POINTER SUR ${name.toUpperCase()} !`;
+            setTimeout(() => {
+                if (currentAttacks.length === 0) alertBox.style.display = 'none';
+                else alertBox.innerText = "TENTATIVE D'INTRUSION - DÉSAMORÇAGE REQUIS !";
+            }, 10000);
+        });
+
+        socket.on('play sound', (url) => { new Audio(url).play().catch(() => {}); });
+
+        // ============================================================
+        // ===== MINI-JEUX =====
+        // ============================================================
+
+        function launchRandomMiniGame() {
+            const games = ['turn_circle', 'click_numbers', 'guess_number', 'morpion'];
+            const game = games[Math.floor(Math.random() * games.length)];
+            miniGameActive = true;
+            ['mg-turn-circle', 'mg-click-numbers', 'mg-guess-number', 'mg-morpion'].forEach(id => {
+                document.getElementById(id).style.display = 'none';
+            });
+            document.getElementById('mg-attack-timer').innerText = '';
+            document.getElementById('minigame-overlay').classList.add('active');
+            if (game === 'turn_circle')   { document.getElementById('mg-turn-circle').style.display = 'block';   startTurnCircle(); }
+            if (game === 'click_numbers') { document.getElementById('mg-click-numbers').style.display = 'block'; startClickNumbers(); }
+            if (game === 'guess_number')  { document.getElementById('mg-guess-number').style.display = 'block';  startGuessNumber(); }
+            if (game === 'morpion')       { document.getElementById('mg-morpion').style.display = 'block';       startMorpion(); }
+        }
+
+        function closeMiniGame() {
+            miniGameActive = false;
+            document.getElementById('minigame-overlay').classList.remove('active');
+            document.getElementById('mg-attack-timer').innerText = '';
+        }
+
+        function miniGameSuccess() {
+            closeMiniGame();
+            socket.emit('d2 diffuse success');
+        }
+
+        // ---- 1. TURN THE CIRCLE ----
+        let tcRound = 0;
+        let tcCurrentAngle = 0;
+        let tcBlocked = false;
+
+        function startTurnCircle() {
+            tcRound = 0;
+            newTCRound();
+        }
+
+        function newTCRound() {
+            tcBlocked = false;
+            const steps = [1, 2, 3];
+            const n = steps[Math.floor(Math.random() * steps.length)];
+            const direction = Math.random() < 0.5 ? 1 : -1;
+            tcCurrentAngle = ((n * 90 * direction) + 360) % 360;
+            document.getElementById('tc-round-info').innerText = `Manche ${tcRound + 1} / 3`;
+            const circle = document.getElementById('tc-circle');
+            circle.classList.remove('success');
+            circle.style.transform = `rotate(${tcCurrentAngle}deg)`;
+        }
+
+        function rotateTCLeft() {
+            if (tcBlocked) return;
+            tcCurrentAngle = (tcCurrentAngle - 90 + 360) % 360;
+            document.getElementById('tc-circle').style.transform = `rotate(${tcCurrentAngle}deg)`;
+            checkTCSuccess();
+        }
+
+        function rotateTCRight() {
+            if (tcBlocked) return;
+            tcCurrentAngle = (tcCurrentAngle + 90) % 360;
+            document.getElementById('tc-circle').style.transform = `rotate(${tcCurrentAngle}deg)`;
+            checkTCSuccess();
+        }
+
+        function checkTCSuccess() {
+            if (tcCurrentAngle === 0) {
+                tcBlocked = true;
+                document.getElementById('tc-circle').classList.add('success');
+                tcRound++;
+                if (tcRound >= 3) {
+                    document.getElementById('tc-round-info').innerText = '✅ Terminé !';
+                    setTimeout(() => miniGameSuccess(), 1000);
+                } else {
+                    setTimeout(() => newTCRound(), 1000);
+                }
+            }
+        }
+
+        // ---- 2. CLICK THE NUMBERS ----
+        let cnNextNumber = 1;
+
+        function startClickNumbers() {
+            cnNextNumber = 1;
+            document.getElementById('cn-next-info').innerHTML = `Prochain : <b style="color:#f1c40f">1</b>`;
+            const numbers = [1,2,3,4,5,6,7,8,9,10];
+            for (let i = numbers.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
+            }
+            const grid = document.getElementById('cn-grid');
+            grid.innerHTML = '';
+            numbers.forEach(n => {
+                const btn = document.createElement('button');
+                btn.className = 'num-btn';
+                btn.innerText = n;
+                btn.id = `cn-btn-${n}`;
+                btn.onclick = () => clickNumber(n, btn);
+                grid.appendChild(btn);
+            });
+        }
+
+        function clickNumber(n, btn) {
+            if (n === cnNextNumber) {
+                btn.classList.add('correct');
+                btn.onclick = null;
+                cnNextNumber++;
+                if (cnNextNumber > 10) {
+                    setTimeout(() => miniGameSuccess(), 400);
+                } else {
+                    document.getElementById('cn-next-info').innerHTML = `Prochain : <b style="color:#f1c40f">${cnNextNumber}</b>`;
+                }
+            } else {
+                btn.classList.add('wrong');
+                setTimeout(() => btn.classList.remove('wrong'), 300);
+                // Réinitialiser les boutons déjà corrects
+                for (let i = 1; i < cnNextNumber; i++) {
+                    const b = document.getElementById(`cn-btn-${i}`);
+                    if (b) { b.classList.remove('correct'); b.onclick = () => clickNumber(i, b); }
+                }
+                cnNextNumber = 1;
+                document.getElementById('cn-next-info').innerHTML = `Prochain : <b style="color:#f1c40f">1</b>`;
+            }
+        }
+
+        // ---- 3. GUESS THE NUMBER ----
+        let gnSecret = 0;
+        let gnAttempts = 0;
+
+        function startGuessNumber() {
+            gnSecret = Math.floor(Math.random() * 9) + 1;
+            gnAttempts = 0;
+            document.getElementById('gn-input').value = '';
+            document.getElementById('gn-hint').innerText = '';
+            document.getElementById('gn-hint').style.color = 'white';
+            document.getElementById('gn-attempts-info').innerText = '3 essais restants';
+            setTimeout(() => document.getElementById('gn-input').focus(), 100);
+        }
+
+        function submitGuess() {
+            const val = parseInt(document.getElementById('gn-input').value);
+            if (isNaN(val) || val < 1 || val > 9) return;
+            gnAttempts++;
+            const remaining = 3 - gnAttempts;
+            const hintEl = document.getElementById('gn-hint');
+
+            if (val === gnSecret) {
+                hintEl.style.color = '#2ecc71';
+                hintEl.innerText = '✅ Correct !';
+                setTimeout(() => miniGameSuccess(), 600);
+            } else if (remaining === 0) {
+                hintEl.style.color = '#e74c3c';
+                hintEl.innerText = `❌ C'était ${gnSecret}. Diffuse BLOQUÉ jusqu'au prochain impact !`;
+                guessLocked = true;
+                setTimeout(() => closeMiniGame(), 2500);
+            } else {
+                hintEl.style.color = '#f1c40f';
+                hintEl.innerText = val < gnSecret ? '▲ Plus grand !' : '▼ Plus petit !';
+                document.getElementById('gn-attempts-info').innerText = `${remaining} essai${remaining > 1 ? 's' : ''} restant${remaining > 1 ? 's' : ''}`;
+                document.getElementById('gn-input').value = '';
+                document.getElementById('gn-input').focus();
+            }
+        }
+
+        // ---- 4. MORPION ----
+        // Bot (X) joue en premier avec minimax — impossible à battre
+        let mpBoard = Array(9).fill('');
+        let mpGameOver = false;
+
+        function startMorpion() {
+            mpBoard = Array(9).fill('');
+            mpGameOver = false;
+            renderMorpion();
+            document.getElementById('mp-status').innerText = 'Le bot réfléchit...';
+            setTimeout(() => botPlayMP(), 500);
+        }
+
+        function renderMorpion() {
+            document.querySelectorAll('.mp-cell').forEach((cell, i) => {
+                cell.innerText = mpBoard[i];
+                cell.className = 'mp-cell';
+                if (mpBoard[i] === 'X') cell.classList.add('x', 'filled');
+                if (mpBoard[i] === 'O') cell.classList.add('o', 'filled');
+            });
+        }
+
+        function playerPlayMP(i) {
+            if (mpGameOver || mpBoard[i] !== '') return;
+            mpBoard[i] = 'O';
+            renderMorpion();
+            const w = checkWinnerMP(mpBoard);
+            if (w === 'O') {
+                document.getElementById('mp-status').innerText = '🎉 Tu gagnes ! Diffuse réussi !';
+                mpGameOver = true;
+                setTimeout(() => miniGameSuccess(), 1000);
+                return;
+            }
+            if (mpBoard.every(c => c !== '')) {
+                document.getElementById('mp-status').innerText = 'Match nul — réessaie !';
+                mpGameOver = true;
+                setTimeout(() => closeMiniGame(), 1500);
+                return;
+            }
+            document.getElementById('mp-status').innerText = 'Le bot réfléchit...';
+            setTimeout(() => botPlayMP(), 450);
+        }
+
+        function botPlayMP() {
+            if (mpGameOver) return;
+            const move = getBestMoveMP(mpBoard);
+            mpBoard[move] = 'X';
+            renderMorpion();
+            const w = checkWinnerMP(mpBoard);
+            if (w === 'X') {
+                document.getElementById('mp-status').innerText = '💀 Le bot gagne — réessaie !';
+                mpGameOver = true;
+                setTimeout(() => closeMiniGame(), 1500);
+                return;
+            }
+            if (mpBoard.every(c => c !== '')) {
+                document.getElementById('mp-status').innerText = 'Match nul — réessaie !';
+                mpGameOver = true;
+                setTimeout(() => closeMiniGame(), 1500);
+                return;
+            }
+            document.getElementById('mp-status').innerText = 'Ton tour (O)';
+        }
+
+        function checkWinnerMP(b) {
+            const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+            for (const [a, b2, c] of lines) {
+                if (b[a] && b[a] === b[b2] && b[a] === b[c]) return b[a];
+            }
+            return null;
+        }
+
+        function getBestMoveMP(board) {
+            let bestScore = -Infinity, bestMove = -1;
+            for (let i = 0; i < 9; i++) {
+                if (board[i] === '') {
+                    board[i] = 'X';
+                    const score = minimaxMP(board, false, 0);
+                    board[i] = '';
+                    if (score > bestScore) { bestScore = score; bestMove = i; }
+                }
+            }
+            return bestMove;
+        }
+
+        function minimaxMP(board, isMaximizing, depth) {
+            const w = checkWinnerMP(board);
+            if (w === 'X') return 10 - depth;
+            if (w === 'O') return depth - 10;
+            if (board.every(c => c !== '')) return 0;
+            if (isMaximizing) {
+                let best = -Infinity;
+                for (let i = 0; i < 9; i++) {
+                    if (board[i] === '') { board[i] = 'X'; best = Math.max(best, minimaxMP(board, false, depth + 1)); board[i] = ''; }
+                }
+                return best;
+            } else {
+                let best = Infinity;
+                for (let i = 0; i < 9; i++) {
+                    if (board[i] === '') { board[i] = 'O'; best = Math.min(best, minimaxMP(board, true, depth + 1)); board[i] = ''; }
+                }
+                return best;
+            }
+        }
+
     </script>
 </body>
 </html>
