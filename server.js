@@ -10,6 +10,7 @@ const io = new Server(server, { maxHttpBufferSize: 5e6 });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.use('/birthdayapp', express.static(path.join(__dirname, 'birthdayapp')));
 // --- ROUTES ---
 app.get('/list', (req, res) => res.sendFile(path.join(__dirname, 'public', 'list.html')));
 app.get('/api/games', (req, res) => {
