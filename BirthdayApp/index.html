@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rappel Anniversaires</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4f46e5">
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --primary: #4f46e5;
+            --text: #1f2937;
+            --card-bg: #ffffff;
+            --danger: #ef4444;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+        }
+        header {
+            background: var(--card-bg);
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e5e7eb;
+            position: sticky;
+            top: 0;
+        }
+        h1 { margin: 0; font-size: 1.25rem; }
+        .btn {
+            background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--primary);
+        }
+        .container { padding: 1rem; max-width: 600px; margin: auto; }
+        .page { display: none; }
+        .page.active { display: block; }
+        
+        /* Liste d'anniversaires */
+        .birthday-card {
+            background: var(--card-bg);
+            padding: 1rem;
+            border-radius: 12px;
+            margin-bottom: 0.75rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+        .days-left {
+            background: #e0e7ff; color: var(--primary);
+            padding: 0.25rem 0.5rem; border-radius: 20px; font-size: 0.85rem; font-weight: bold;
+        }
+        .empty-state { text-align: center; color: #6b7280; margin-top: 3rem; }
+
+        /* Formulaires et détails */
+        .form-group { margin-bottom: 1.25rem; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
+        input, textarea {
+            width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box;
+        }
+        .submit-btn {
+            background: var(--primary); color: white; border: none; width: 100%;
+            padding: 0.75rem; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer;
+        }
+        .detail-value { background: var(--card-bg); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border: 1px solid #e5e7eb; }
+    </style>
+</head>
+<body>
+
+    <div id="page-home" class="page active">
+        <header>
+            <h1>Prochains Anniversaires</h1>
+            <button class="btn" onclick="navigate('page-create')">+</button>
+        </header>
+        <div class="container">
+            <div id="birthday-list"></div>
+            <div id="empty-state" class="empty-state" style="display: none;">
+                Aucun anniversaire enregistré.<br>Appuyez sur "+" pour commencer !
+            </div>
+        </div>
+    </div>
+
+    <div id="page-create" class="page">
+        <header>
+            <button class="btn" onclick="cancelEdit()">←</button>
+            <h1 id="form-title">Nouvel Anniversaire</h1>
+            <div></div>
+        </header>
+        <div class="container">
+            <input type="hidden" id="edit-id">
+            <div class="form-group">
+                <label for="form-name">Nom</label>
+                <input type="text" id="form-name" required>
+            </div>
+            <div class="form-group">
+                <label for="form-date">Date de naissance</label>
+                <input type="date" id="form-date" required>
+            </div>
+            <div class="form-group">
+                <label for="form-notes">Notes supplémentaires</label>
+                <textarea id="form-notes" rows="4"></textarea>
+            </div>
+            <button class="submit-btn" onclick="saveBirthday()">Enregistrer</button>
+        </div>
+    </div>
+
+    <div id="page-detail" class="page">
+        <header>
+            <button class="btn" onclick="navigate('page-home')">←</button>
+            <h1>Détails</h1>
+            <div>
+                <button class="btn" style="font-size: 1.25rem; margin-right: 10px;" onclick="enableEditMode()">✏️</button>
+                <button class="btn" style="color: var(--danger);" onclick="deleteBirthday()">−</button>
+            </div>
+        </header>
+        <div class="container">
+            <label>Nom</label>
+            <div id="detail-name" class="detail-value" style="font-weight: bold; font-size: 1.2rem;"></div>
+            
+            <label>Date de naissance</label>
+            <div id="detail-value" class="detail-value"></div>
+            
+            <label>Notes</label>
+            <div id="detail-notes" class="detail-value" style="white-space: pre-wrap;"></div>
+        </div>
+    </div>
+
+    <script>
+        let birthdays = JSON.parse(localStorage.getItem('birthdays')) || [];
+        let currentViewedId = null;
+
+        function navigate(pageId) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById(pageId).classList.add('active');
+            if(pageId === 'page-home') renderList();
+        }
+
+        function getDaysUntilNext(dateString) {
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const birthDate = new Date(dateString);
+            
+            let nextBirthday = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
+            if (nextBirthday < today) {
+                nextBirthday.setFullYear(today.getFullYear() + 1);
+            }
+            
+            const diffTime = nextBirthday - today;
+            return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        }
+
+        function renderList() {
+            const listContainer = document.getElementById('birthday-list');
+            const emptyState = document.getElementById('empty-state');
+            listContainer.innerHTML = '';
+
+            if (birthdays.length === 0) {
+                emptyState.style.display = 'block';
+                return;
+            }
+            emptyState.style.display = 'none';
+
+            const sorted = [...birthdays].sort((a, b) => getDaysUntilNext(a.date) - getDaysUntilNext(b.date));
+
+            sorted.forEach(b => {
+                const days = getDaysUntilNext(b.date);
+                const card = document.createElement('div');
+                card.className = 'birthday-card';
+                card.onclick = () => showDetail(b.id);
+                
+                const formattedDate = new Date(b.date).toLocaleDateString('fr-FR', {day: 'numeric', month: 'long'});
+
+                card.innerHTML = `
+                    <div>
+                        <strong style="font-size:1.1rem;">${b.name}</strong>
+                        <div style="color:#6b7280; font-size:0.9rem; margin-top:4px;">${formattedDate}</div>
+                    </div>
+                    <span class="days-left">${days === 365 || days === 0 ? 'Aujourd\'hui 🎉' : 'Dans ' + days + ' j.'}</span>
+                `;
+                listContainer.appendChild(card);
+            });
+        }
+
+        function saveBirthday() {
+            const id = document.getElementById('edit-id').value;
+            const name = document.getElementById('form-name').value.trim();
+            const date = document.getElementById('form-date').value;
+            const notes = document.getElementById('form-notes').value.trim();
+
+            if (!name || !date) {
+                alert('Veuillez remplir le nom et la date.');
+                return;
+            }
+
+            if (id) {
+                birthdays = birthdays.map(b => b.id === id ? { id, name, date, notes } : b);
+            } else {
+                const newBirthday = { id: Date.now().toString(), name, date, notes };
+                birthdays.push(newBirthday);
+            }
+
+            localStorage.setItem('birthdays', JSON.stringify(birthdays));
+            clearForm();
+            navigate('page-home');
+        }
+
+        function showDetail(id) {
+            currentViewedId = id;
+            const b = birthdays.find(item => item.id === id);
+            if (!b) return;
+
+            document.getElementById('detail-name').innerText = b.name;
+            const fullDate = new Date(b.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+            document.getElementById('detail-value').innerText = fullDate;
+            document.getElementById('detail-notes').innerText = b.notes || "Aucune note.";
+
+            navigate('page-detail');
+        }
+
+        function enableEditMode() {
+            const b = birthdays.find(item => item.id === currentViewedId);
+            if (!b) return;
+
+            document.getElementById('form-title').innerText = "Modifier l'anniversaire";
+            document.getElementById('edit-id').value = b.id;
+            document.getElementById('form-name').value = b.name;
+            document.getElementById('form-date').value = b.date;
+            document.getElementById('form-notes').value = b.notes;
+
+            navigate('page-create');
+        }
+
+        function deleteBirthday() {
+            if (confirm("Supprimer cet anniversaire ?")) {
+                birthdays = birthdays.filter(b => b.id !== currentViewedId);
+                localStorage.setItem('birthdays', JSON.stringify(birthdays));
+                navigate('page-home');
+            }
+        }
+
+        function clearForm() {
+            document.getElementById('form-title').innerText = "Nouvel Anniversaire";
+            document.getElementById('edit-id').value = '';
+            document.getElementById('form-name').value = '';
+            document.getElementById('form-date').value = '';
+            document.getElementById('form-notes').value = '';
+        }
+
+        function cancelEdit() {
+            clearForm();
+            if (currentViewedId && document.getElementById('form-title').innerText === "Modifier l'anniversaire") {
+                navigate('page-detail');
+            } else {
+                navigate('page-home');
+            }
+        }
+
+        renderList();
+    </script>
+</body>
+</html>
