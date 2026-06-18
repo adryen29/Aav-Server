@@ -1,7 +1,7 @@
 {
   "name": "Rappel Anniversaires",
   "short_name": "Annivs",
-  "start_url": "index.html",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8f9fa",
   "theme_color": "#4f46e5",
